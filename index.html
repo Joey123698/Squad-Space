@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🤝 Squad Space</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+    body{background:#0D1117;color:#E2E8F0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;}
+    button{transition:all .15s;font-family:inherit;}
+    input,select,textarea{font-family:inherit;}
+    a{color:#34D399;word-break:break-all;}
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:#2A3560;border-radius:2px;}
+    #loading{display:flex;height:100vh;align-items:center;justify-content:center;color:#8892B0;font-size:14px;flex-direction:column;gap:8px;}
+    .spin{width:24px;height:24px;border:2px solid #2A3560;border-top-color:#38BDF8;border-radius:50%;animation:spin .8s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .pulse{animation:pulse 1.4s ease-in-out infinite;}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  </style>
+</head>
+<body>
+  <div id="root"><div id="loading"><div class="spin"></div>Đang tải ứng dụng...</div></div>
+  <script>
+    setTimeout(function(){
+      if (typeof React === "undefined" || typeof ReactDOM === "undefined") {
+        document.getElementById("root").innerHTML =
+          '<div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:10px;padding:20px;text-align:center;color:#E2E8F0;font-family:sans-serif;">' +
+          '<div style="font-size:32px;">⚠️</div>' +
+          '<div style="font-size:15px;font-weight:700;">Không tải được thư viện cần thiết</div>' +
+          '<div style="font-size:13px;color:#8892B0;max-width:340px;">Hãy kiểm tra kết nối mạng, hoặc mở file này trực tiếp bằng trình duyệt (Chrome/Safari/Edge) thay vì xem trong khung xem trước.</div>' +
+          '</div>';
+      }
+    }, 8000);
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.28.4/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ═══════════════════════════════════════════════
+    //  CONFIG
+    // ═══════════════════════════════════════════════
+    const PHASES = [
+      { id:1, label:"Phase 1 – Microeconometrics", icon:"📊", color:"#38BDF8",
+        start:"2026-06-15", end:"2026-07-12",
+        focus:["Ôn toàn bộ Micro (ưu tiên cao nhất)","Tiếng Đức: ngữ pháp + từ vựng hàng ngày (Anki)","Tiếng Anh: speaking practice cùng nhau"],
+        tip:"3-4 buổi học nhóm/tuần · 90 phút/buổi · Pomodoro 25+5" },
+      { id:2, label:"Phase 2 – Macroeconomics", icon:"📈", color:"#FB7185",
+        start:"2026-07-13", end:"2026-08-11",
+        focus:["Ôn toàn bộ Macro (ưu tiên cao nhất)","Tiếng Đức: đẩy mạnh giao tiếp để xin việc","Tiếng Anh: writing + speaking"],
+        tip:"Switch hoàn toàn sang Macro sau khi thi Micro xong" },
+      { id:3, label:"Phase 3 – Career", icon:"💼", color:"#FCD34D",
+        start:"2026-08-12", end:null,
+        focus:["Làm đẹp CV (tiếng Đức + tiếng Anh)","Tìm job listings & apply","Networking, events, tình nguyện"],
+        tip:"Bắt đầu chuẩn bị CV từ cuối tháng 7 (sau thi Micro)" },
+    ];
+
+    const KEY_DATES = [
+      { date:"2026-07-22", label:"Thi Microeconometrics", color:"#38BDF8" },
+      { date:"2026-08-01", label:"Xin việc làm (Đức)", color:"#A78BFA" },
+      { date:"2026-08-11", label:"Thi Macroeconomics", color:"#FB7185" },
+    ];
+
+    const SLOT_KEYS = ["morning","afternoon","evening"];
+    const SLOT_LBL  = ["Sáng","Chiều","Tối"];
+    const DAY_SHORT = ["T2","T3","T4","T5","T6","T7","CN"];
+    const SUBJECTS  = [
+      {key:"micro", label:"📊 Microeconometrics"},
+      {key:"macro", label:"📈 Macroeconomics"},
+      {key:"german",label:"🇩🇪 Tiếng Đức"},
+      {key:"english",label:"🇬🇧 Tiếng Anh"},
+    ];
+    const NOTE_FILTERS = [
+      {key:"all",label:"Tất cả"},{key:"micro",label:"📊 Micro"},
+      {key:"macro",label:"📈 Macro"},{key:"german",label:"🇩🇪 Đức"},
+      {key:"english",label:"🇬🇧 Anh"},{key:"question",label:"❓ Câu hỏi"},
+    ];
+    const D_PRE = [
+      {text:"Ôn lý thuyết & làm bài tập"},{text:"Soạn 3 câu hỏi cho chủ đề"},
+    ];
+    const D_DUR = [
+      {text:"Giảng lại concept cho nhau (Feynman)"},
+      {text:"So sánh đáp án & cách giải"},
+      {text:"Giải câu hỏi tự soạn của nhau"},
+    ];
+    const D_POST = [
+      {text:"Viết shared note vào ứng dụng"},{text:"Assign nhiệm vụ cho buổi tới"},
+    ];
+
+    // ═══════════════════════════════════════════════
+    //  THEME
+    // ═══════════════════════════════════════════════
+    const T = {
+      bg:"#0D1117", surf:"#161B27", surf2:"#1A2040",
+      border:"#2A3560", text:"#E2E8F0", t2:"#8892B0", t3:"#4A5568",
+      c1:"#38BDF8", c2:"#A78BFA", ok:"#4ADE80", xp:"#FCD34D", err:"#F87171",
+    };
+
+    // ═══════════════════════════════════════════════
+    //  HELPERS
+    // ═══════════════════════════════════════════════
+    const uid    = () => Math.random().toString(36).slice(2,9);
+    const dleft  = s  => Math.max(0, Math.floor((new Date(s)-new Date())/86400000));
+    const fmt    = d  => new Date(d).toLocaleDateString("vi-VN",{day:"2-digit",month:"2-digit"});
+    const toKey  = d  => { const dt=new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
+    const addDay = (d,n) => { const dt=new Date(d); dt.setDate(dt.getDate()+n); return dt; };
+    const monday = d  => { const dt=new Date(d),day=dt.getDay()||7; dt.setDate(dt.getDate()-day+1); dt.setHours(0,0,0,0); return dt; };
+    const inSlot = (time,s) => { const h=parseInt((time||"14:00").split(":")[0]); return s==="morning"?h<13:s==="afternoon"?(h>=13&&h<18):h>=18; };
+    const sColor = s  => ({micro:T.c1,macro:"#FB7185",german:T.c2,english:"#34D399",general:T.t3}[s]||T.t3);
+    const nowKey = ()  => toKey(new Date());
+
+    // ═══════════════════════════════════════════════
+    //  LOCAL STORAGE
+    // ═══════════════════════════════════════════════
+    const LS_DATA = "squad-v3-data";
+    const LS_ID   = "squad-v3-id";
+    const LS_ROOM = "squad-v3-room";
+
+    const EMPTY_DEL = { sessions:{}, notes:{}, todos:{}, events:{} };
+
+    const mkData = () => ({
+      sessions:[{
+        id:uid(), date:toKey(addDay(new Date(),2)), time:"14:00",
+        subject:"micro", topic:"Linear Regression & OLS Properties",
+        status:"planned", notes:"", _t: Date.now(),
+        preTodos:  D_PRE.map(t=>({id:uid(),text:t.text,done:false,who:"both"})),
+        duringTodos:D_DUR.map(t=>({id:uid(),text:t.text,done:false,who:"both"})),
+        postTodos: D_POST.map(t=>({id:uid(),text:t.text,done:false,who:"both"})),
+      }],
+      notes:[{id:uid(),title:"Kế hoạch học nhóm tổng quan",content:"Phase 1 (15/6–12/7): Micro + ngôn ngữ hàng ngày\nPhase 2 (13/7–11/8): Macro + ngôn ngữ\nPhase 3 (từ 12/8): CV & xin việc",type:"text",subject:"general",by:1,date:"15/06/2026",_t:Date.now()}],
+      todos:[{id:uid(),text:"Ôn lý thuyết OLS trước buổi học đầu tiên",who:"both",subject:"micro",done:false,_t:Date.now()}],
+      events:[],
+      avail:{},
+      _deleted: { sessions:{}, notes:{}, todos:{}, events:{} },
+    });
+
+    const loadData = () => { try{ const s=localStorage.getItem(LS_DATA); if(!s) return mkData(); const d=JSON.parse(s); if(!d._deleted) d._deleted={...EMPTY_DEL}; return d; }catch{ return mkData(); } };
+    const saveData = d  => { try{ localStorage.setItem(LS_DATA,JSON.stringify(d)); }catch{} };
+    const loadId   = () => { try{ return parseInt(localStorage.getItem(LS_ID))||null; }catch{ return null; } };
+    const saveId   = id => { try{ localStorage.setItem(LS_ID,String(id)); }catch{} };
+    const loadRoom = () => { try{ return localStorage.getItem(LS_ROOM)||null; }catch{ return null; } };
+    const saveRoom = r  => { try{ if(r) localStorage.setItem(LS_ROOM,r); else localStorage.removeItem(LS_ROOM); }catch{} };
+
+    // ═══════════════════════════════════════════════
+    //  MERGE LOGIC (for cloud sync conflict resolution)
+    // ═══════════════════════════════════════════════
+    function mergeList(localArr, cloudArr, localDel, cloudDel){
+      const del = {...(cloudDel||{})};
+      Object.entries(localDel||{}).forEach(([id,t])=>{ del[id]=Math.max(t||0, del[id]||0); });
+      const map = new Map();
+      [...(cloudArr||[]), ...(localArr||[])].forEach(item=>{
+        if(!item || !item.id) return;
+        const ex = map.get(item.id);
+        if(!ex || (item._t||0) >= (ex._t||0)) map.set(item.id, item);
+      });
+      const items = Array.from(map.values()).filter(item=>{
+        const dt = del[item.id];
+        return !dt || dt < (item._t||0);
+      });
+      return { items, del };
+    }
+
+    function mergeAvail(local, cloud, myId){
+      const localA = local||{}, cloudA = cloud||{};
+      const dates = new Set([...Object.keys(localA), ...Object.keys(cloudA)]);
+      const out = {};
+      dates.forEach(d=>{
+        const c = cloudA[d]||{}, l = localA[d]||{};
+        const merged = {...c};
+        if(myId && l[myId]) merged[myId] = l[myId];
+        Object.keys(l).forEach(k=>{ if(!(k in merged)) merged[k]=l[k]; });
+        out[d]=merged;
+      });
+      return out;
+    }
+
+    function mergeData(local, cloud, myId){
+      if(!cloud) return local;
+      const ld = local._deleted || EMPTY_DEL;
+      const cd = cloud._deleted || EMPTY_DEL;
+      const sessions = mergeList(local.sessions, cloud.sessions, ld.sessions, cd.sessions);
+      const notes    = mergeList(local.notes,    cloud.notes,    ld.notes,    cd.notes);
+      const todos    = mergeList(local.todos,    cloud.todos,    ld.todos,    cd.todos);
+      const events   = mergeList(local.events,   cloud.events,   ld.events,   cd.events);
+      const avail    = mergeAvail(local.avail, cloud.avail, myId);
+      return {
+        sessions: sessions.items, notes: notes.items, todos: todos.items, events: events.items,
+        avail,
+        _deleted: { sessions: sessions.del, notes: notes.del, todos: todos.del, events: events.del },
+      };
+    }
+
+    // ═══════════════════════════════════════════════
+    //  CLOUD BACKEND (KVdb.io — free, no signup)
+    // ═══════════════════════════════════════════════
+    const KV_ROOT = "https://kvdb.io";
+    const KV_SECTIONS = ["sessions","notes","todos","events","avail","_deleted"];
+
+    async function kvCreateBucket(){
+      const res = await fetch(KV_ROOT + "/", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "email=" + encodeURIComponent(`squad-${uid()}@squadspace.local`),
+      });
+      if(!res.ok) throw new Error("create-failed");
+      const id = (await res.text()).trim();
+      if(!id || id.length < 5) throw new Error("bad-id");
+      return id;
+    }
+
+    async function kvGetSection(bucket,key){
+      const res = await fetch(`${KV_ROOT}/${bucket}/${key}`, { cache:"no-store" });
+      if(res.status===404) return null;
+      if(!res.ok) throw new Error("get-failed");
+      const text = await res.text();
+      if(!text) return null;
+      try{ return JSON.parse(text); }catch{ return null; }
+    }
+
+    async function kvSetSection(bucket,key,value){
+      const res = await fetch(`${KV_ROOT}/${bucket}/${key}`, {
+        method:"POST",
+        headers:{ "Content-Type":"text/plain" },
+        body: JSON.stringify(value),
+      });
+      if(!res.ok) throw new Error("set-failed");
+    }
+
+    async function cloudPull(bucket){
+      const results = await Promise.all(KV_SECTIONS.map(k=>kvGetSection(bucket,k).catch(()=>null)));
+      const out = {};
+      KV_SECTIONS.forEach((k,i)=>{ out[k]=results[i]; });
+      return out;
+    }
+
+    async function cloudPush(bucket,data){
+      await Promise.all(KV_SECTIONS.map(k=>{
+        const v = data[k] ?? (k==="avail"||k==="_deleted" ? {} : []);
+        return kvSetSection(bucket,k,v);
+      }));
+    }
+
+    // ═══════════════════════════════════════════════
+    //  SHARED UI PIECES
+    // ═══════════════════════════════════════════════
+    function Bar({value,max,color,h=5}){
+      const w=max>0?Math.min(100,Math.round(value/max*100)):0;
+      return <div style={{background:T.border,borderRadius:99,height:h,overflow:"hidden"}}>
+        <div style={{width:`${w}%`,height:"100%",background:color,borderRadius:99,transition:"width .4s",minWidth:w>0?3:0}}/>
+      </div>;
+    }
+
+    function PillBtn({active,onClick,children}){
+      return <button onClick={onClick} style={{padding:"5px 10px",borderRadius:20,border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:active?T.text:"#1E2A40",color:active?T.bg:T.t2,whiteSpace:"nowrap"}}>{children}</button>;
+    }
+
+    function Field({label,children}){
+      return <div><div style={{fontSize:10,color:T.t2,marginBottom:3}}>{label}</div>{children}</div>;
+    }
+
+    function Input({value,onChange,placeholder,type="text",style={},onKeyDown}){
+      return <input type={type} value={value} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder} style={{width:"100%",padding:"7px 10px",background:"#0D1117",border:`1px solid ${T.border}`,borderRadius:6,color:T.text,fontSize:12,outline:"none",boxSizing:"border-box",...style}}/>;
+    }
+
+    function Select({value,onChange,options,style={}}){
+      return <select value={value} onChange={onChange} style={{width:"100%",padding:"7px 10px",background:"#0D1117",border:`1px solid ${T.border}`,borderRadius:6,color:T.text,fontSize:12,outline:"none",boxSizing:"border-box",...style}}>
+        {options.map(o=><option key={o.key||o.value||o} value={o.key||o.value||o}>{o.label||o}</option>)}
+      </select>;
+    }
+
+    function InlineAdd({onAdd,color,placeholder}){
+      const[v,setV]=useState("");
+      const go=()=>{ if(v.trim()){onAdd(v.trim());setV("");} };
+      return <div style={{display:"flex",gap:6,marginTop:6}}>
+        <input value={v} onChange={e=>setV(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder={placeholder||"+ Thêm..."}
+          style={{flex:1,padding:"5px 8px",background:"transparent",border:`1px dashed ${T.border}`,borderRadius:6,color:T.t2,fontSize:11,outline:"none"}}/>
+        <button onClick={go} style={{padding:"4px 8px",borderRadius:6,border:"none",background:color||T.ok,color:"#000",fontSize:11,cursor:"pointer",fontWeight:700}}>+</button>
+      </div>;
+    }
+
+    function TodoRow({todo,onToggle,color}){
+      return <div onClick={onToggle} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 8px",borderRadius:6,cursor:"pointer",marginBottom:3,background:todo.done?`${color}11`:"transparent"}}>
+        <div style={{width:14,height:14,borderRadius:3,flexShrink:0,border:`2px solid ${todo.done?color:"#364060"}`,background:todo.done?color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#000",fontWeight:900}}>{todo.done?"✓":""}</div>
+        <span style={{fontSize:12,color:todo.done?T.t3:T.t2,textDecoration:todo.done?"line-through":"none",flex:1}}>{todo.text}</span>
+        {todo.who&&todo.who!=="both"&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:8,background:(todo.who==="1"?T.c1:T.c2)+"22",color:todo.who==="1"?T.c1:T.c2}}>B{todo.who}</span>}
+      </div>;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  TAB: ROADMAP
+    // ═══════════════════════════════════════════════
+    function RoadmapTab(){
+      const now=new Date();
+      return <div>
+        <div style={{background:T.surf,border:`1px solid ${T.border}`,borderRadius:12,padding:16,marginBottom:18}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.t2,letterSpacing:1,marginBottom:10}}>TIMELINE TỔNG QUAN</div>
+          <div style={{display:"flex",height:26,borderRadius:8,overflow:"hidden",marginBottom:6}}>
+            <div style={{flex:"0 0 47%",background:`${PHASES[0].color}33`,display:"flex",alignItems:"center",justifyContent:"center",borderRight:`2px solid ${T.bg}`}}>
+              <span style={{fontSize:9,color:PHASES[0].color,fontWeight:700}}>MICRO</span>
+            </div>
+            <div style={{flex:"0 0 53%",background:`${PHASES[1].color}33`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <span style={{fontSize:9,color:PHASES[1].color,fontWeight:700}}>MACRO</span>
+            </div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:T.t3}}>
+            <span>15/6</span><span style={{color:PHASES[0].color}}>12/7</span><span style={{color:PHASES[1].color}}>11/8</span>
+          </div>
+        </div>
+
+        {PHASES.map(p=>{
+          const started=now>=new Date(p.start), ended=p.end&&now>new Date(p.end), active=started&&!ended;
+          return <div key={p.id} style={{background:active?`${p.color}0D`:T.surf,border:`1px solid ${active?p.color+"55":T.border}`,borderRadius:12,padding:16,marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <span style={{fontSize:22}}>{p.icon}</span>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontWeight:700,fontSize:14,color:p.color}}>{p.label}</span>
+                  {active&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:8,background:`${p.color}22`,color:p.color,fontWeight:700}}>● ĐANG DIỄN RA</span>}
+                </div>
+                <div style={{fontSize:11,color:T.t2,marginTop:2}}>{p.start} → {p.end||"..."} {p.end&&!ended&&`· còn ${dleft(p.end)} ngày`}</div>
+              </div>
+            </div>
+            {p.focus.map((f,i)=><div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 0",borderTop:i>0?`1px solid ${T.border}`:undefined}}>
+              <div style={{width:4,height:4,borderRadius:"50%",background:p.color,flexShrink:0,marginTop:5}}/>
+              <span style={{fontSize:12,color:T.t2}}>{f}</span>
+            </div>)}
+            <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${T.border}`,fontSize:11,color:T.t3,fontStyle:"italic"}}>💡 {p.tip}</div>
+          </div>;
+        })}
+
+        <div style={{background:T.surf,border:`1px solid ${T.border}`,borderRadius:12,padding:16}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.t2,letterSpacing:1,marginBottom:10}}>📌 NGÀY QUAN TRỌNG</div>
+          {KEY_DATES.map((kd,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<KEY_DATES.length-1?`1px solid ${T.border}`:undefined}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:kd.color,flexShrink:0}}/>
+            <span style={{flex:1,fontSize:12,color:T.t2}}>{kd.label}</span>
+            <span style={{fontSize:12,color:T.t3}}>{new Date(kd.date).toLocaleDateString("vi-VN")}</span>
+            <span style={{fontSize:14,fontWeight:800,color:kd.color,minWidth:40,textAlign:"right"}}>{dleft(kd.date)}d</span>
+          </div>)}
+        </div>
+      </div>;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  TAB: CALENDAR
+    // ═══════════════════════════════════════════════
+    function CalendarTab({data,setData,myId}){
+      const[wk,setWk]=useState(()=>monday(new Date()));
+      const[evForm,setEvForm]=useState(null);
+
+      const toggleAvail=(dk,sk)=>{
+        if(!myId)return;
+        setData(prev=>{
+          const av={...(prev.avail||{})};
+          const day={...(av[dk]||{})};
+          const sl=[...(day[myId]||[])];
+          const i=sl.indexOf(sk); if(i>=0)sl.splice(i,1); else sl.push(sk);
+          day[myId]=sl; av[dk]=day;
+          return {...prev,avail:av};
+        });
+      };
+
+      const delEvent = id => setData(p=>({...p, events:p.events.filter(e=>e.id!==id), _deleted:{...p._deleted, events:{...p._deleted.events,[id]:Date.now()}}}));
+
+      const wDays=Array(7).fill(0).map((_,i)=>addDay(wk,i));
+      const wSess=data.sessions.filter(s=>{const d=new Date(s.date);return d>=wk&&d<=addDay(wk,6);});
+      const wEvs=(data.events||[]).filter(e=>{const d=new Date(e.date);return d>=wk&&d<=addDay(wk,6);});
+
+      return <div>
+        {!myId&&<div style={{background:"#FCD34D22",border:"1px solid #FCD34D44",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#FCD34D",marginBottom:14}}>
+          ⚠️ Chọn "Tôi là Bạn 1 / Bạn 2" ở trên để đánh dấu lịch rảnh của bạn
+        </div>}
+
+        <div style={{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+          {[{color:T.c1,label:"Bạn 1 rảnh"},{color:T.c2,label:"Bạn 2 rảnh"},{color:T.ok,label:"Cả 2 rảnh ✓"},{color:T.ok,label:"📚 Buổi học"},{color:T.xp,label:"⚡ Event"}].map((l,i)=>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:5}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:l.color}}/>
+              <span style={{fontSize:11,color:T.t2}}>{l.label}</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+          <button onClick={()=>setWk(w=>addDay(w,-7))} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surf,color:T.text,cursor:"pointer"}}>‹</button>
+          <span style={{flex:1,textAlign:"center",fontSize:13,fontWeight:600}}>{fmt(wk)} – {fmt(addDay(wk,6))}</span>
+          <button onClick={()=>setWk(w=>addDay(w,7))}  style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surf,color:T.text,cursor:"pointer"}}>›</button>
+          <button onClick={()=>setWk(monday(new Date()))} style={{padding:"6px 10px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surf,color:T.t2,cursor:"pointer",fontSize:11}}>Hôm nay</button>
+        </div>
+
+        <div style={{overflowX:"auto",marginBottom:20}}>
+          <div style={{minWidth:460}}>
+            <div style={{display:"grid",gridTemplateColumns:"50px repeat(7,1fr)",gap:3,marginBottom:3}}>
+              <div/>
+              {wDays.map((d,i)=>{
+                const today=toKey(d)===nowKey();
+                return <div key={i} style={{textAlign:"center",padding:"4px 2px"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:today?T.c1:T.t2}}>{DAY_SHORT[i]}</div>
+                  <div style={{fontSize:10,color:today?T.c1:T.t3}}>{fmt(d)}</div>
+                </div>;
+              })}
+            </div>
+
+            {SLOT_KEYS.map((sk,si)=><div key={sk} style={{display:"grid",gridTemplateColumns:"50px repeat(7,1fr)",gap:3,marginBottom:3}}>
+              <div style={{fontSize:10,color:T.t3,display:"flex",alignItems:"center",textAlign:"right",paddingRight:4,lineHeight:1.3}}>{SLOT_LBL[si]}</div>
+              {wDays.map((d,di)=>{
+                const dk=toKey(d);
+                const av=(data.avail||{})[dk]||{};
+                const a1=(av[1]||[]).includes(sk), a2=(av[2]||[]).includes(sk), both=a1&&a2;
+                const sess=data.sessions.filter(s=>s.date===dk&&inSlot(s.time,sk));
+                const evs=si===0?(data.events||[]).filter(e=>e.date===dk):[];
+                return <div key={di} onClick={()=>toggleAvail(dk,sk)} style={{
+                  minHeight:42,borderRadius:5,cursor:"pointer",padding:3,
+                  border:`1px solid ${both?T.ok:a1?T.c1:a2?T.c2:T.border}`,
+                  background:sess.length?"#001810":both?`${T.ok}18`:a1?`${T.c1}14`:a2?`${T.c2}14`:"transparent",
+                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
+                }}>
+                  <div style={{display:"flex",gap:2}}>
+                    {a1&&<div style={{width:5,height:5,borderRadius:"50%",background:T.c1}}/>}
+                    {a2&&<div style={{width:5,height:5,borderRadius:"50%",background:T.c2}}/>}
+                  </div>
+                  {sess.map((_,i)=><div key={i} style={{fontSize:8,color:T.ok}}>📚</div>)}
+                  {evs.map((_,i)=><div key={i} style={{fontSize:8,color:T.xp}}>⚡</div>)}
+                </div>;
+              })}
+            </div>)}
+          </div>
+        </div>
+
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.t2}}>TUẦN NÀY</div>
+          <button onClick={()=>setEvForm({title:"",date:nowKey()})} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${T.xp}44`,background:"transparent",color:T.xp,cursor:"pointer",fontSize:11,fontWeight:600}}>+ Thêm event</button>
+        </div>
+
+        {evForm&&<div style={{background:T.surf,border:`1px solid ${T.xp}44`,borderRadius:10,padding:14,marginBottom:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8,marginBottom:8}}>
+            <Field label="Tên event / hoạt động"><Input value={evForm.title} onChange={e=>setEvForm(f=>({...f,title:e.target.value}))} placeholder="Workshop, tình nguyện, networking..."/></Field>
+            <Field label="Ngày"><Input type="date" value={evForm.date} onChange={e=>setEvForm(f=>({...f,date:e.target.value}))}/></Field>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>setEvForm(null)} style={{padding:"6px 12px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.t2,cursor:"pointer",fontSize:12}}>Hủy</button>
+            <button onClick={()=>{if(evForm.title&&evForm.date){setData(p=>({...p,events:[...(p.events||[]),{...evForm,id:uid(),_t:Date.now()}]}));setEvForm(null);}}} style={{padding:"6px 12px",borderRadius:6,border:"none",background:T.xp,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12}}>Thêm</button>
+          </div>
+        </div>}
+
+        {!wSess.length&&!wEvs.length
+          ? <div style={{textAlign:"center",padding:20,color:T.t3,fontSize:13}}>Tuần này chưa có lịch. Click vào ô để đánh dấu rảnh.</div>
+          : [...wSess.map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:8,marginBottom:6}}>
+              <span style={{fontSize:16}}>{s.subject==="micro"?"📊":"📈"}</span>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{s.topic}</div><div style={{fontSize:11,color:T.t2}}>{new Date(s.date).toLocaleDateString("vi-VN")} · {s.time}</div></div>
+              <span style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:`${T.ok}22`,color:T.ok}}>📚 Học nhóm</span>
+            </div>),
+            ...wEvs.map(e=><div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:8,marginBottom:6}}>
+              <span style={{fontSize:16}}>⚡</span>
+              <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{e.title}</div><div style={{fontSize:11,color:T.t2}}>{new Date(e.date).toLocaleDateString("vi-VN")}</div></div>
+              <button onClick={()=>delEvent(e.id)} style={{background:"none",border:"none",color:T.t3,cursor:"pointer",fontSize:16}}>×</button>
+            </div>)
+          ]
+        }
+      </div>;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  TAB: SESSIONS
+    // ═══════════════════════════════════════════════
+    function SessionsTab({data,setData}){
+      const[showForm,setShowForm]=useState(false);
+      const[form,setForm]=useState({date:toKey(addDay(new Date(),2)),time:"14:00",subject:"micro",topic:""});
+      const[exp,setExp]=useState(null);
+      const[tf,setTf]=useState(null);
+
+      const mkTodos=arr=>arr.map(t=>({id:uid(),text:t.text,done:false,who:"both"}));
+      const addSess=()=>{
+        if(!form.date||!form.topic)return;
+        const s={...form,id:uid(),status:"planned",notes:"",_t:Date.now(),preTodos:mkTodos(D_PRE),duringTodos:mkTodos(D_DUR),postTodos:mkTodos(D_POST)};
+        setData(p=>({...p,sessions:[...p.sessions,s]}));
+        setShowForm(false); setExp(s.id);
+      };
+      const togTodo=(sid,pk,tid)=>setData(p=>({...p,sessions:p.sessions.map(s=>s.id!==sid?s:{...s,_t:Date.now(),[pk]:s[pk].map(t=>t.id!==tid?t:{...t,done:!t.done})})}));
+      const addTodo=(sid,pk,text)=>setData(p=>({...p,sessions:p.sessions.map(s=>s.id!==sid?s:{...s,_t:Date.now(),[pk]:[...s[pk],{id:uid(),text,done:false,who:"both"}]})}));
+      const updNote=(sid,v)=>setData(p=>({...p,sessions:p.sessions.map(s=>s.id!==sid?s:{...s,notes:v,_t:Date.now()})}));
+      const markDone=id=>setData(p=>({...p,sessions:p.sessions.map(s=>s.id!==id?s:{...s,status:"done",_t:Date.now()})}));
+      const delSess=id=>setData(p=>({...p,sessions:p.sessions.filter(s=>s.id!==id),_deleted:{...p._deleted,sessions:{...p._deleted.sessions,[id]:Date.now()}}}));
+      const addHtodo=t=>{ setData(p=>({...p,todos:[{...t,id:uid(),done:false,_t:Date.now()},...(p.todos||[])]})); setTf(null); };
+      const togHtodo=id=>setData(p=>({...p,todos:(p.todos||[]).map(t=>t.id!==id?t:{...t,done:!t.done,_t:Date.now()})}));
+      const delHtodo=id=>setData(p=>({...p,todos:(p.todos||[]).filter(t=>t.id!==id),_deleted:{...p._deleted,todos:{...p._deleted.todos,[id]:Date.now()}}}));
+
+      const PHASES=[
+        {key:"preTodos",  label:"📖 TRƯỚC BUỔI HỌC (làm ở nhà)", color:T.xp},
+        {key:"duringTodos",label:"👥 TRONG BUỔI HỌC",              color:T.ok},
+        {key:"postTodos", label:"📝 SAU BUỔI HỌC",                 color:T.c1},
+      ];
+      const upcoming=data.sessions.filter(s=>s.status!=="done").sort((a,b)=>a.date.localeCompare(b.date));
+      const done=data.sessions.filter(s=>s.status==="done");
+
+      return <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontSize:14,fontWeight:700}}>Buổi học nhóm</div>
+          <button onClick={()=>setShowForm(v=>!v)} style={{padding:"7px 14px",borderRadius:20,border:"none",background:T.ok,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12}}>
+            {showForm?"× Đóng":"+ Thêm buổi học"}
+          </button>
+        </div>
+
+        {showForm&&<div style={{background:T.surf,border:`1px solid ${T.ok}44`,borderRadius:12,padding:16,marginBottom:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <Field label="Ngày"><Input type="date" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></Field>
+            <Field label="Giờ bắt đầu"><Input type="time" value={form.time} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></Field>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:8,marginBottom:12}}>
+            <Field label="Môn"><Select value={form.subject} onChange={e=>setForm(p=>({...p,subject:e.target.value}))} options={SUBJECTS}/></Field>
+            <Field label="Topic / Chủ đề"><Input value={form.topic} onChange={e=>setForm(p=>({...p,topic:e.target.value}))} placeholder="vd: IV & 2SLS, Solow Model..."/></Field>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>setShowForm(false)} style={{padding:"7px 14px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.t2,cursor:"pointer",fontSize:12}}>Hủy</button>
+            <button onClick={addSess} style={{padding:"7px 14px",borderRadius:6,border:"none",background:T.ok,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12}}>Thêm buổi học</button>
+          </div>
+        </div>}
+
+        {!upcoming.length&&!showForm&&<div style={{textAlign:"center",padding:24,color:T.t3,background:T.surf,border:`1px solid ${T.border}`,borderRadius:10,marginBottom:16}}>
+          <div style={{fontSize:24,marginBottom:6}}>📭</div>Chưa có buổi học nào sắp tới.
+        </div>}
+
+        {upcoming.map(s=>{
+          const isOpen=exp===s.id;
+          const all=[...(s.preTodos||[]),...(s.duringTodos||[]),...(s.postTodos||[])];
+          const dc=all.filter(t=>t.done).length;
+          return <div key={s.id} style={{background:T.surf,border:`1px solid ${T.border}`,borderRadius:10,marginBottom:8,overflow:"hidden"}}>
+            <div onClick={()=>setExp(isOpen?null:s.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",cursor:"pointer"}}>
+              <span style={{fontSize:18}}>{s.subject==="micro"?"📊":s.subject==="macro"?"📈":"🌍"}</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:600}}>{s.topic}</div>
+                <div style={{fontSize:11,color:T.t2}}>{new Date(s.date).toLocaleDateString("vi-VN")} · {s.time}</div>
+              </div>
+              <div style={{textAlign:"center",minWidth:36}}>
+                <div style={{fontSize:12,fontWeight:700,color:dc===all.length&&all.length>0?T.ok:T.t2}}>{dc}/{all.length}</div>
+                <div style={{fontSize:9,color:T.t3}}>todos</div>
+              </div>
+              <button onClick={e=>{e.stopPropagation();markDone(s.id);}} style={{padding:"3px 8px",borderRadius:6,border:`1px solid ${T.ok}44`,background:"transparent",color:T.t2,cursor:"pointer",fontSize:11}}>✓</button>
+              <button onClick={e=>{e.stopPropagation();delSess(s.id);}} style={{padding:"2px 6px",borderRadius:6,border:"none",background:"transparent",color:T.t3,cursor:"pointer",fontSize:16}}>×</button>
+              <span style={{fontSize:9,color:T.t3}}>{isOpen?"▲":"▼"}</span>
+            </div>
+
+            {isOpen&&<div style={{borderTop:`1px solid ${T.border}`,padding:14}}>
+              {PHASES.map(ph=><div key={ph.key} style={{marginBottom:14}}>
+                <div style={{fontSize:10,fontWeight:700,color:ph.color,letterSpacing:1,marginBottom:6}}>{ph.label}</div>
+                {(s[ph.key]||[]).map(t=><TodoRow key={t.id} todo={t} color={ph.color} onToggle={()=>togTodo(s.id,ph.key,t.id)}/>)}
+                <InlineAdd color={ph.color} placeholder="+ Thêm việc cần làm..." onAdd={text=>addTodo(s.id,ph.key,text)}/>
+              </div>)}
+              <div style={{borderTop:`1px solid ${T.border}`,paddingTop:12}}>
+                <div style={{fontSize:10,fontWeight:700,color:T.t2,letterSpacing:1,marginBottom:6}}>📌 NOTE / LINK TÀI LIỆU BUỔI HỌC NÀY</div>
+                <textarea value={s.notes||""} onChange={e=>updNote(s.id,e.target.value)} placeholder="Ghi chú, link slide, đáp án bài tập, câu hỏi chưa giải được..."
+                  style={{width:"100%",minHeight:70,padding:"8px 10px",background:"#090D14",border:`1px solid ${T.border}`,borderRadius:6,color:T.text,fontSize:12,outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
+              </div>
+            </div>}
+          </div>;
+        })}
+
+        {done.length>0&&<div style={{marginTop:8,opacity:.55}}>
+          <div style={{fontSize:11,color:T.t3,marginBottom:6}}>✓ Đã xong ({done.length} buổi)</div>
+          {done.map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 12px",background:T.surf,border:`1px solid ${T.border}44`,borderRadius:8,marginBottom:4}}>
+            <span style={{fontSize:14}}>{s.subject==="micro"?"📊":"📈"}</span>
+            <span style={{flex:1,fontSize:12,color:T.t3,textDecoration:"line-through"}}>{s.topic}</span>
+            <span style={{fontSize:11,color:T.t3}}>{new Date(s.date).toLocaleDateString("vi-VN")}</span>
+          </div>)}
+        </div>}
+
+        <div style={{marginTop:28}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{fontSize:14,fontWeight:700}}>📚 Nhiệm vụ ở nhà</div>
+            <button onClick={()=>setTf({text:"",who:"both",subject:"micro"})} style={{padding:"6px 12px",borderRadius:20,border:"none",background:T.xp,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12}}>+ Thêm</button>
+          </div>
+          {tf&&<div style={{background:T.surf,border:`1px solid ${T.xp}44`,borderRadius:10,padding:14,marginBottom:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:8,marginBottom:8}}>
+              <Field label="Nhiệm vụ"><Input value={tf.text} onChange={e=>setTf(f=>({...f,text:e.target.value}))} placeholder="vd: Ôn lý thuyết IV..."/></Field>
+              <Field label="Giao cho"><Select value={tf.who} onChange={e=>setTf(f=>({...f,who:e.target.value}))} options={[{key:"both",label:"Cả 2"},{key:"1",label:"Bạn 1"},{key:"2",label:"Bạn 2"}]}/></Field>
+              <Field label="Môn"><Select value={tf.subject} onChange={e=>setTf(f=>({...f,subject:e.target.value}))} options={SUBJECTS}/></Field>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>setTf(null)} style={{padding:"6px 12px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.t2,cursor:"pointer",fontSize:12}}>Hủy</button>
+              <button onClick={()=>{if(tf.text)addHtodo(tf);}} style={{padding:"6px 12px",borderRadius:6,border:"none",background:T.xp,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12}}>Thêm</button>
+            </div>
+          </div>}
+          {(data.todos||[]).filter(t=>!t.done).map(t=><div key={t.id} onClick={()=>togHtodo(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:8,marginBottom:5,cursor:"pointer"}}>
+            <div style={{width:16,height:16,borderRadius:"50%",border:`2px solid ${T.xp}`,flexShrink:0}}/>
+            <span style={{flex:1,fontSize:12}}>{t.text}</span>
+            <span style={{fontSize:10,padding:"1px 7px",borderRadius:8,background:(t.who==="both"?T.ok:t.who==="1"?T.c1:T.c2)+"22",color:t.who==="both"?T.ok:t.who==="1"?T.c1:T.c2}}>{t.who==="both"?"Cả 2":`Bạn ${t.who}`}</span>
+            <span style={{fontSize:10,color:T.t3}}>{t.subject}</span>
+            <button onClick={e=>{e.stopPropagation();delHtodo(t.id);}} style={{background:"none",border:"none",color:T.t3,cursor:"pointer",fontSize:15}}>×</button>
+          </div>)}
+          {(data.todos||[]).filter(t=>t.done).length>0&&<div style={{marginTop:6,opacity:.5}}>
+            {(data.todos||[]).filter(t=>t.done).map(t=><div key={t.id} onClick={()=>togHtodo(t.id)} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",borderRadius:8,marginBottom:3,cursor:"pointer"}}>
+              <div style={{width:14,height:14,borderRadius:"50%",background:T.ok,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#000",fontWeight:900}}>✓</div>
+              <span style={{flex:1,fontSize:12,color:T.t3,textDecoration:"line-through"}}>{t.text}</span>
+            </div>)}
+          </div>}
+        </div>
+      </div>;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  TAB: NOTES
+    // ═══════════════════════════════════════════════
+    function NotesTab({data,setData,myId}){
+      const[filter,setFilter]=useState("all");
+      const[form,setForm]=useState(null);
+      const TM={text:{icon:"📝",color:T.c1},link:{icon:"🔗",color:"#34D399"},question:{icon:"❓",color:T.xp},answer:{icon:"✅",color:T.ok}};
+      const filtered=(data.notes||[]).filter(n=>filter==="all"||n.subject===filter||n.type===filter);
+      const addNote=()=>{
+        if(!form?.title||!form?.content)return;
+        setData(p=>({...p,notes:[{...form,id:uid(),by:myId||"?",date:new Date().toLocaleDateString("vi-VN"),_t:Date.now()},...(p.notes||[])]}));
+        setForm(null);
+      };
+      const delNote = id => setData(p=>({...p,notes:p.notes.filter(x=>x.id!==id),_deleted:{...p._deleted,notes:{...p._deleted.notes,[id]:Date.now()}}}));
+      return <div>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:4,flex:1,flexWrap:"wrap"}}>
+            {NOTE_FILTERS.map(f=><PillBtn key={f.key} active={filter===f.key} onClick={()=>setFilter(f.key)}>{f.label}</PillBtn>)}
+          </div>
+          <button onClick={()=>setForm({title:"",content:"",type:"text",subject:"general"})} style={{padding:"7px 14px",borderRadius:20,border:"none",background:T.c2,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12}}>+ Thêm note</button>
+        </div>
+
+        {form&&<div style={{background:T.surf,border:`1px solid ${T.c2}44`,borderRadius:12,padding:16,marginBottom:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:8,marginBottom:10}}>
+            <Field label="Tiêu đề"><Input value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Tên note, câu hỏi, link tài liệu..."/></Field>
+            <Field label="Loại"><Select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} options={[{key:"text",label:"📝 Note"},{key:"link",label:"🔗 Link"},{key:"question",label:"❓ Câu hỏi"},{key:"answer",label:"✅ Đáp án"}]}/></Field>
+            <Field label="Chủ đề"><Select value={form.subject} onChange={e=>setForm(f=>({...f,subject:e.target.value}))} options={[{key:"general",label:"📌 Chung"},...SUBJECTS]}/></Field>
+          </div>
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,color:T.t2,marginBottom:3}}>{form.type==="link"?"URL / Link":"Nội dung / Câu hỏi / Đáp án"}</div>
+            <textarea value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))} placeholder={form.type==="link"?"https://...":"Viết ghi chú, câu hỏi, đáp án, hoặc paste link..."}
+              style={{width:"100%",minHeight:80,padding:"8px 10px",background:"#0D1117",border:`1px solid ${T.border}`,borderRadius:6,color:T.text,fontSize:12,outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>setForm(null)} style={{padding:"6px 12px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.t2,cursor:"pointer",fontSize:12}}>Hủy</button>
+            <button onClick={addNote} style={{padding:"6px 12px",borderRadius:6,border:"none",background:T.c2,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12}}>Lưu note</button>
+          </div>
+        </div>}
+
+        {filtered.length===0
+          ? <div style={{textAlign:"center",padding:30,color:T.t3}}><div style={{fontSize:28,marginBottom:8}}>📭</div>Chưa có note. Thêm ghi chú, link tài liệu, câu hỏi!</div>
+          : filtered.map(n=>{
+              const m=TM[n.type]||TM.text, sc=sColor(n.subject);
+              return <div key={n.id} style={{background:T.surf,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6}}>
+                  <span style={{fontSize:16,flexShrink:0}}>{m.icon}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:600}}>{n.title}</div>
+                    <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"center"}}>
+                      <span style={{fontSize:10,padding:"1px 7px",borderRadius:8,background:`${sc}22`,color:sc}}>{n.subject}</span>
+                      <span style={{fontSize:10,padding:"1px 7px",borderRadius:8,background:`${m.color}22`,color:m.color}}>{n.type}</span>
+                      <span style={{fontSize:10,color:T.t3}}>Bạn {n.by} · {n.date}</span>
+                    </div>
+                  </div>
+                  <button onClick={()=>delNote(n.id)} style={{background:"none",border:"none",color:T.t3,cursor:"pointer",fontSize:16,flexShrink:0}}>×</button>
+                </div>
+                <div style={{fontSize:12,color:T.t2,paddingLeft:24,lineHeight:1.6,wordBreak:"break-word"}}>
+                  {n.type==="link"
+                    ? <a href={n.content} target="_blank" rel="noopener noreferrer">{n.content}</a>
+                    : <div style={{whiteSpace:"pre-wrap"}}>{n.content}</div>}
+                </div>
+              </div>;
+            })
+        }
+      </div>;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  SYNC MODAL (Cloud room + manual fallback)
+    // ═══════════════════════════════════════════════
+    function SyncModal({data,setData,myId,room,setRoom,cloudStatus,lastSync,onForceSync,onClose}){
+      const[mode,setMode]=useState("cloud");
+      const[joinCode,setJoinCode]=useState("");
+      const[creating,setCreating]=useState(false);
+      const[joining,setJoining]=useState(false);
+      const[err,setErr]=useState("");
+      const[copied,setCopied]=useState(false);
+
+      // manual fallback state
+      const[manMode,setManMode]=useState("export");
+      const[imp,setImp]=useState("");
+      const[impErr,setImpErr]=useState("");
+      const[impOk,setImpOk]=useState(false);
+      const json=JSON.stringify(data,null,2);
+
+      const createRoom=async()=>{
+        setCreating(true); setErr("");
+        try{
+          const id = await kvCreateBucket();
+          await cloudPush(id, data);
+          setRoom(id); saveRoom(id);
+        }catch(e){ setErr("Không tạo được phòng (mạng hoặc dịch vụ tạm lỗi). Dùng tab Thủ công để gửi qua Zalo nhé."); }
+        setCreating(false);
+      };
+
+      const joinRoom=async()=>{
+        const code = joinCode.trim();
+        if(!code) return;
+        setJoining(true); setErr("");
+        try{
+          const cloud = await cloudPull(code);
+          const hasAny = KV_SECTIONS.some(k=>cloud[k]!==null);
+          if(!hasAny) throw new Error("empty");
+          const merged = mergeData(data, cloud, myId);
+          setData(merged);
+          setRoom(code); saveRoom(code);
+        }catch(e){ setErr("Không tìm thấy phòng này, hoặc phòng chưa có dữ liệu. Kiểm tra lại mã."); }
+        setJoining(false);
+      };
+
+      const leaveRoom=()=>{ setRoom(null); saveRoom(null); setErr(""); };
+      const copyCode=()=>{ navigator.clipboard.writeText(room).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}); };
+
+      const copyJson=()=>{ navigator.clipboard.writeText(json).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);}); };
+      const doImport=()=>{
+        try{
+          const parsed=JSON.parse(imp);
+          if(!parsed._deleted) parsed._deleted={...EMPTY_DEL};
+          setData(parsed); saveData(parsed);
+          setImpOk(true); setImpErr("");
+          setTimeout(()=>onClose(),1000);
+        }catch{ setImpErr("Dữ liệu không hợp lệ. Hãy paste đúng nội dung JSON từ bạn học."); }
+      };
+
+      const statusMeta = {
+        idle:    {color:T.t3, label:"Chưa kết nối"},
+        syncing: {color:T.xp, label:"Đang đồng bộ..."},
+        synced:  {color:T.ok, label:"Đã đồng bộ"},
+        error:   {color:T.err,label:"Lỗi kết nối — sẽ tự thử lại"},
+      }[cloudStatus] || {color:T.t3,label:""};
+
+      return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+        <div style={{background:T.surf2,border:`1px solid ${T.border}`,borderRadius:14,padding:20,width:"100%",maxWidth:520,maxHeight:"88vh",display:"flex",flexDirection:"column"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div style={{fontSize:16,fontWeight:700}}>🔄 Đồng bộ dữ liệu</div>
+            <button onClick={onClose} style={{background:"none",border:"none",color:T.t2,cursor:"pointer",fontSize:22,lineHeight:1}}>×</button>
+          </div>
+
+          <div style={{display:"flex",gap:6,marginBottom:14}}>
+            <button onClick={()=>setMode("cloud")} style={{flex:1,padding:"9px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,background:mode==="cloud"?T.ok:"#1E2A40",color:mode==="cloud"?"#000":T.t2}}>☁️ Phòng chung (tự động)</button>
+            <button onClick={()=>setMode("manual")} style={{flex:1,padding:"9px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,background:mode==="manual"?T.c2:"#1E2A40",color:mode==="manual"?"#000":T.t2}}>📋 Thủ công</button>
+          </div>
+
+          {mode==="cloud" && <div style={{overflowY:"auto"}}>
+            {!room ? <div>
+              <div style={{background:"#001A2A",border:"1px solid #004466",borderRadius:8,padding:"10px 12px",marginBottom:16,fontSize:12,color:"#7DD3FC",lineHeight:1.7}}>
+                Tạo một <strong>phòng chung</strong> — cả hai mở app và nhập cùng mã phòng, mọi thay đổi (buổi học, note, lịch rảnh...) sẽ tự đồng bộ hai chiều, không cần gửi file qua lại.
+              </div>
+
+              <div style={{marginBottom:18}}>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:8}}>👉 Người tạo phòng (làm 1 lần)</div>
+                <button onClick={createRoom} disabled={creating} style={{width:"100%",padding:"11px",borderRadius:8,border:"none",background:creating?"#1E2A40":T.ok,color:creating?T.t3:"#000",fontWeight:700,cursor:creating?"default":"pointer",fontSize:13}}>
+                  {creating?"Đang tạo phòng...":"➕ Tạo phòng mới"}
+                </button>
+              </div>
+
+              <div style={{borderTop:`1px solid ${T.border}`,paddingTop:16}}>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:8}}>👉 Người còn lại — nhập mã phòng đã nhận</div>
+                <div style={{display:"flex",gap:8}}>
+                  <Input value={joinCode} onChange={e=>setJoinCode(e.target.value)} placeholder="Paste mã phòng vào đây..."/>
+                  <button onClick={joinRoom} disabled={joining||!joinCode.trim()} style={{padding:"7px 16px",borderRadius:8,border:"none",background:joinCode.trim()?T.c2:"#1E2A40",color:joinCode.trim()?"#000":T.t3,fontWeight:700,cursor:joinCode.trim()?"pointer":"default",fontSize:13,whiteSpace:"nowrap"}}>
+                    {joining?"...":"Vào phòng"}
+                  </button>
+                </div>
+              </div>
+
+              {err&&<div style={{fontSize:12,color:T.err,marginTop:14,padding:"8px 10px",background:"#2A0A0A",borderRadius:8}}>⚠️ {err}</div>}
+            </div> : <div>
+              <div style={{fontSize:11,color:T.t2,marginBottom:6}}>Mã phòng hiện tại — gửi mã này cho bạn học để cùng vào:</div>
+              <div style={{display:"flex",gap:8,marginBottom:14}}>
+                <div style={{flex:1,padding:"9px 12px",background:"#090D14",border:`1px solid ${T.border}`,borderRadius:8,fontFamily:"monospace",fontSize:13,color:T.ok,wordBreak:"break-all"}}>{room}</div>
+                <button onClick={copyCode} style={{padding:"9px 14px",borderRadius:8,border:"none",background:copied?T.ok:T.c1,color:"#000",fontWeight:700,cursor:"pointer",fontSize:12,whiteSpace:"nowrap"}}>{copied?"✓ Đã copy":"📋 Copy"}</button>
+              </div>
+
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:T.surf,border:`1px solid ${T.border}`,borderRadius:8,marginBottom:14}}>
+                <div className={cloudStatus==="syncing"?"pulse":""} style={{width:8,height:8,borderRadius:"50%",background:statusMeta.color,flexShrink:0}}/>
+                <span style={{fontSize:12,color:T.t2,flex:1}}>{statusMeta.label}{lastSync?` · lúc ${new Date(lastSync).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})}`:""}</span>
+                <button onClick={onForceSync} style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.t2,cursor:"pointer",fontSize:11}}>Sync ngay</button>
+              </div>
+
+              <div style={{fontSize:11,color:T.t3,lineHeight:1.6,marginBottom:14}}>
+                ✓ Mọi thay đổi tự động đồng bộ mỗi ~15 giây, và ngay khi bạn sửa gì đó.<br/>
+                ✓ Cả hai có thể mở app cùng lúc, dữ liệu sẽ hợp nhất.
+              </div>
+
+              <button onClick={leaveRoom} style={{width:"100%",padding:"9px",borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.t2,cursor:"pointer",fontSize:12}}>Rời phòng (dữ liệu trên cloud vẫn còn)</button>
+            </div>}
+          </div>}
+
+          {mode==="manual" && <div>
+            <div style={{fontSize:11,color:T.t2,marginBottom:10}}>Dùng khi không tạo được phòng tự động — copy/paste qua Zalo, WhatsApp...</div>
+            <div style={{display:"flex",gap:6,marginBottom:12}}>
+              <button onClick={()=>setManMode("export")} style={{flex:1,padding:"7px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:12,background:manMode==="export"?T.c1:"#1E2A40",color:manMode==="export"?"#000":T.t2}}>📤 Xuất</button>
+              <button onClick={()=>setManMode("import")} style={{flex:1,padding:"7px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:600,fontSize:12,background:manMode==="import"?T.c2:"#1E2A40",color:manMode==="import"?"#000":T.t2}}>📥 Nhập</button>
+            </div>
+            {manMode==="export" ? <div>
+              <textarea readOnly value={json} style={{width:"100%",minHeight:160,padding:10,background:"#090D14",border:`1px solid ${T.border}`,borderRadius:8,color:T.t2,fontSize:10,outline:"none",resize:"none",fontFamily:"monospace"}}/>
+              <button onClick={copyJson} style={{width:"100%",marginTop:10,padding:"10px",borderRadius:8,border:"none",background:copied?T.ok:T.c1,color:"#000",fontWeight:700,cursor:"pointer",fontSize:13}}>{copied?"✓ Đã copy!":"📋 Copy dữ liệu"}</button>
+            </div> : <div>
+              <textarea value={imp} onChange={e=>{setImp(e.target.value);setImpErr("");setImpOk(false);}} placeholder="Paste nội dung JSON vào đây..."
+                style={{width:"100%",minHeight:160,padding:10,background:"#090D14",border:`1px solid ${impErr?T.err:T.border}`,borderRadius:8,color:T.text,fontSize:11,outline:"none",resize:"none",fontFamily:"monospace"}}/>
+              {impErr&&<div style={{fontSize:11,color:T.err,marginTop:6}}>⚠️ {impErr}</div>}
+              {impOk&&<div style={{fontSize:11,color:T.ok,marginTop:6}}>✓ Đồng bộ thành công!</div>}
+              <button onClick={doImport} disabled={!imp.trim()} style={{width:"100%",marginTop:10,padding:"10px",borderRadius:8,border:"none",background:imp.trim()?T.c2:"#1E2A40",color:imp.trim()?"#000":T.t3,fontWeight:700,cursor:imp.trim()?"pointer":"default",fontSize:13}}>🔄 Đồng bộ dữ liệu</button>
+            </div>}
+          </div>}
+        </div>
+      </div>;
+    }
+
+    // ═══════════════════════════════════════════════
+    //  MAIN APP
+    // ═══════════════════════════════════════════════
+    function App(){
+      const[myId,setMyId]=useState(()=>loadId());
+      const[data,setData]=useState(()=>loadData());
+      const[tab,setTab]=useState("roadmap");
+      const[showSync,setShowSync]=useState(false);
+      const[room,setRoom]=useState(()=>loadRoom());
+      const[cloudStatus,setCloudStatus]=useState("idle");
+      const[lastSync,setLastSync]=useState(null);
+
+      const pushTimer = useRef(null);
+      const pulling   = useRef(false);
+      const pushing   = useRef(false);
+
+      useEffect(()=>{ saveData(data); },[data]);
+      const setId=id=>{ setMyId(id); saveId(id); };
+
+      // ---- periodic cloud pull ----
+      useEffect(()=>{
+        if(!room) { setCloudStatus("idle"); return; }
+        let alive = true;
+        const pull = async () => {
+          if(pulling.current) return;
+          pulling.current = true;
+          try{
+            const cloud = await cloudPull(room);
+            const hasAny = KV_SECTIONS.some(k=>cloud[k]!==null);
+            if(hasAny && alive){
+              setData(prev => mergeData(prev, cloud, myId));
+              setCloudStatus("synced"); setLastSync(Date.now());
+            }
+          }catch(e){ if(alive) setCloudStatus("error"); }
+          pulling.current = false;
+        };
+        pull();
+        const iv = setInterval(pull, 15000);
+        return ()=>{ alive=false; clearInterval(iv); };
+      },[room, myId]);
+
+      // ---- debounced cloud push on local data change ----
+      useEffect(()=>{
+        if(!room) return;
+        clearTimeout(pushTimer.current);
+        pushTimer.current = setTimeout(async ()=>{
+          if(pushing.current) return;
+          pushing.current = true;
+          setCloudStatus("syncing");
+          try{
+            const cloud = await cloudPull(room).catch(()=>null);
+            const merged = mergeData(data, cloud, myId);
+            if(JSON.stringify(merged)!==JSON.stringify(data)) setData(merged);
+            await cloudPush(room, merged);
+            setCloudStatus("synced"); setLastSync(Date.now());
+          }catch(e){ setCloudStatus("error"); }
+          pushing.current = false;
+        }, 1200);
+        return ()=>clearTimeout(pushTimer.current);
+        // eslint-disable-next-line
+      },[data, room]);
+
+      const forceSync = async () => {
+        if(!room) return;
+        setCloudStatus("syncing");
+        try{
+          const cloud = await cloudPull(room);
+          const merged = mergeData(data, cloud, myId);
+          setData(merged);
+          await cloudPush(room, merged);
+          setCloudStatus("synced"); setLastSync(Date.now());
+        }catch(e){ setCloudStatus("error"); }
+      };
+
+      const TABS=[
+        {key:"roadmap",label:"🗺️ Roadmap"},
+        {key:"calendar",label:"📅 Lịch"},
+        {key:"sessions",label:"✅ Buổi học"},
+        {key:"notes",label:"📎 Notes"},
+      ];
+
+      const statusDot = {idle:T.t3,syncing:T.xp,synced:T.ok,error:T.err}[cloudStatus];
+
+      return <div style={{minHeight:"100vh"}}>
+        {showSync&&<SyncModal data={data} setData={setData} myId={myId} room={room} setRoom={r=>{setRoom(r);}} cloudStatus={cloudStatus} lastSync={lastSync} onForceSync={forceSync} onClose={()=>setShowSync(false)}/>}
+
+        <div style={{background:T.surf2,borderBottom:`1px solid ${T.border}`,padding:"12px 16px",position:"sticky",top:0,zIndex:10}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:17,fontWeight:800}}>🤝 Squad Space</div>
+              <div style={{fontSize:10,color:T.t2}}>Không gian học nhóm · mở bằng trình duyệt bất kỳ</div>
+            </div>
+            <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:10,color:T.t3}}>Tôi là</span>
+              {[1,2].map(id=><button key={id} onClick={()=>setId(id)} style={{padding:"4px 10px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700,border:`1px solid ${(id===1?T.c1:T.c2)}55`,background:myId===id?(id===1?T.c1:T.c2):"transparent",color:myId===id?"#000":(id===1?T.c1:T.c2)}}>
+                {id===1?"🧑 Bạn 1":"👤 Bạn 2"}
+              </button>)}
+              <button onClick={()=>setShowSync(true)} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:20,border:`1px solid ${room?statusDot+"55":T.ok+"55"}`,background:"transparent",color:room?statusDot:T.ok,cursor:"pointer",fontSize:11,fontWeight:700}}>
+                <span className={cloudStatus==="syncing"?"pulse":""} style={{width:6,height:6,borderRadius:"50%",background:room?statusDot:T.t3,display:"inline-block"}}/>
+                {room?"☁️ Đã kết nối":"🔄 Sync"}
+              </button>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:14,overflowX:"auto",paddingBottom:2}}>
+            {KEY_DATES.map((kd,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
+              <div style={{width:6,height:6,borderRadius:"50%",background:kd.color}}/>
+              <span style={{fontSize:10,color:T.t2}}>{kd.label}</span>
+              <span style={{fontSize:11,fontWeight:700,color:kd.color}}>{dleft(kd.date)}d</span>
+            </div>)}
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:5,padding:"10px 14px",background:T.surf,borderBottom:`1px solid ${T.border}`,overflowX:"auto"}}>
+          {TABS.map(t=><button key={t.key} onClick={()=>setTab(t.key)} style={{padding:"8px 14px",borderRadius:20,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,whiteSpace:"nowrap",background:tab===t.key?T.text:"#1E2A40",color:tab===t.key?T.bg:T.t2,transition:"all .15s"}}>{t.label}</button>)}
+        </div>
+
+        <div style={{padding:"18px 14px",maxWidth:760,margin:"0 auto"}}>
+          {tab==="roadmap"  && <RoadmapTab/>}
+          {tab==="calendar" && <CalendarTab  data={data} setData={setData} myId={myId}/>}
+          {tab==="sessions" && <SessionsTab  data={data} setData={setData}/>}
+          {tab==="notes"    && <NotesTab     data={data} setData={setData} myId={myId}/>}
+        </div>
+      </div>;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
