@@ -274,9 +274,16 @@
         try{
           firebase.initializeApp(FIREBASE_CONFIG);
           fbDb = firebase.firestore();
-          firebase.auth().signInAnonymously()
-            .then(()=>resolve())
-            .catch(e=>reject(new Error((e&&e.code?e.code+": ":"")+(e&&e.message?e.message:"đăng nhập ẩn danh thất bại"))));
+        const provider = new firebase.auth.GoogleAuthProvider();
+
+firebase.auth().signInWithPopup(provider)
+  .then(()=>resolve())
+  .catch(e=>reject(
+    new Error(
+      (e&&e.code?e.code+": ":"")
+      +(e&&e.message?e.message:"Google sign-in failed")
+    )
+  ));
         }catch(e){ reject(new Error(e&&e.message?e.message:"Firebase init thất bại")); }
       });
       return fbAuthPromise;
