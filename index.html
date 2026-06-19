@@ -260,11 +260,14 @@
     //  CLOUD BACKEND (Firebase Firestore — anonymous auth)
     // ═══════════════════════════════════════════════
     let fbDb = null, fbAuthPromise = null;
+
+    // fbInit: khởi tạo Firebase + kiểm tra session cũ.
+    // KHÔNG bao giờ gọi popup ở đây — popup chỉ được gọi từ nút bấm của người dùng.
     function fbInit(){
       if(fbAuthPromise) return fbAuthPromise;
       fbAuthPromise = new Promise((resolve,reject)=>{
         if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf("PASTE_")===0){
-          reject(new Error("Chưa dán Firebase config vào file — xem hướng dẫn thiết lập Firebase."));
+          reject(new Error("Chưa dán Firebase config vào file."));
           return;
         }
         if(typeof firebase==="undefined"){
@@ -272,21 +275,28 @@
           return;
         }
         try{
-          firebase.initializeApp(FIREBASE_CONFIG);
+          if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
           fbDb = firebase.firestore();
-        const provider = new firebase.auth.GoogleAuthProvider();
-
-firebase.auth().signInWithPopup(provider)
-  .then(()=>resolve())
-  .catch(e=>reject(
-    new Error(
-      (e&&e.code?e.code+": ":"")
-      +(e&&e.message?e.message:"Google sign-in failed")
-    )
-  ));
+          // Chỉ kiểm tra session đã có — nếu chưa đăng nhập thì báo lỗi riêng
+          // để App component tự quyết định khi nào hiện nút đăng nhập
+          const unsub = firebase.auth().onAuthStateChanged(user=>{
+            unsub(); // chỉ lắng nghe 1 lần
+            if(user){ resolve(user); }
+            else{ reject(new Error("needs-signin")); }
+          });
         }catch(e){ reject(new Error(e&&e.message?e.message:"Firebase init thất bại")); }
       });
       return fbAuthPromise;
+    }
+
+    // Hàm này gọi popup Google — CHỈ được gọi từ onClick của nút, không bao giờ từ background
+    async function fbSignInWithGoogle(){
+      if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      if(!fbDb) fbDb = firebase.firestore();
+      const provider = new firebase.auth.GoogleAuthProvider();
+      await firebase.auth().signInWithPopup(provider);
+      // reset fbAuthPromise để lần sau fbInit() nhận ra đã đăng nhập
+      fbAuthPromise = null;
     }
     function genRoomCode(){ return uid()+uid(); }
     async function fbCreateRoom(data){
@@ -1135,8 +1145,15 @@ firebase.auth().signInWithPopup(provider)
         setJoining(true); setErr("");
         try{
           const cloud=await cloudPull(code);
-          if(!cloud) throw new Error("phòng trống hoặc không tồn tại");
-          setData(prev=>mergeData(prev,cloud,myId));
+          if(!cloud) throw new Error("phòng trống hoặc không tồn tại — kiểm tra lại mã phòng");
+          // JOIN: dùng cloud làm gốc để tránh bị double dữ liệu
+          // Chỉ giữ lại lịch rảnh local của người dùng (nếu có)
+          setData(prev=>{
+            const localAvail = prev.avail||{};
+            const joined = migrate({...cloud});
+            joined.avail = mergeAvail(localAvail, cloud.avail, myId);
+            return joined;
+          });
           setRoom(code); saveRoom(code);
         }catch(e){ setErr(`Không vào được phòng. Chi tiết: ${e.message||"phòng trống hoặc sai mã"}. Kiểm tra lại mã, hoặc dùng tab Thủ công.`); }
         setJoining(false);
@@ -1214,7 +1231,30 @@ firebase.auth().signInWithPopup(provider)
     // ═══════════════════════════════════════════════
     //  MAIN APP
     // ═══════════════════════════════════════════════
+    function SignInScreen({onSignIn, err}){
+      const[loading,setLoading]=useState(false);
+      const[localErr,setLocalErr]=useState("");
+      const doSignIn=async()=>{
+        setLoading(true); setLocalErr("");
+        try{ await fbSignInWithGoogle(); onSignIn(); }
+        catch(e){ setLocalErr(e&&e.message?e.message:"Đăng nhập thất bại — thử lại."); }
+        setLoading(false);
+      };
+      return <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16,padding:24,textAlign:"center"}}>
+        <div style={{fontSize:36}}>🤝</div>
+        <div style={{fontSize:20,fontWeight:800}}>Squad Space</div>
+        <div style={{fontSize:13,color:T.t2,maxWidth:280}}>Đăng nhập một lần — những lần sau app tự nhớ, không hỏi lại.</div>
+        <button onClick={doSignIn} disabled={loading} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 24px",borderRadius:10,border:"none",background:"#fff",color:"#222",fontWeight:700,fontSize:14,cursor:loading?"default":"pointer",opacity:loading?0.7:1,marginTop:8}}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/><path fill="none" d="M0 0h48v48H0z"/></svg>
+          {loading?"Đang đăng nhập...":"Đăng nhập với Google"}
+        </button>
+        {(localErr||err)&&<div style={{fontSize:12,color:T.err,maxWidth:300}}>{localErr||err}</div>}
+      </div>;
+    }
+
     function App(){
+      const[authState,setAuthState]=useState("checking"); // "checking"|"signed-in"|"needs-signin"
+      const[authErr,setAuthErr]=useState("");
       const[myId,setMyId]=useState(()=>loadId());
       const[data,setData]=useState(()=>loadData());
       const[tab,setTab]=useState("roadmap");
@@ -1223,6 +1263,21 @@ firebase.auth().signInWithPopup(provider)
       const[cloudStatus,setCloudStatus]=useState("idle");
       const[lastSync,setLastSync]=useState(null);
       const pushTimer=useRef(null), pulling=useRef(false), pushing=useRef(false);
+
+      // Check auth state on mount
+      useEffect(()=>{
+        if(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf("PASTE_")!==0){
+          fbInit()
+            .then(()=>setAuthState("signed-in"))
+            .catch(e=>{
+              if(e&&e.message==="needs-signin") setAuthState("needs-signin");
+              else{ setAuthErr(e&&e.message?e.message:"Lỗi Firebase"); setAuthState("needs-signin"); }
+            });
+        } else {
+          // No Firebase config — skip auth entirely, just use app with manual sync
+          setAuthState("signed-in");
+        }
+      },[]);
 
       useEffect(()=>{ saveData(data); },[data]);
       const setId=id=>{ setMyId(id); saveId(id); };
@@ -1279,6 +1334,18 @@ firebase.auth().signInWithPopup(provider)
         {key:"sessions",label:"✅ Buổi học"},
         {key:"notes",label:"📎 Notes"},
       ];
+
+      // Show loading spinner while checking existing auth session
+      if(authState==="checking") return <div style={{display:"flex",height:"100vh",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:10,color:T.t2}}>
+        <div className="spin"/><div style={{fontSize:13}}>Đang kiểm tra đăng nhập...</div>
+      </div>;
+
+      // Show sign-in screen if not authenticated
+      if(authState==="needs-signin") return <SignInScreen err={authErr} onSignIn={()=>{
+        fbAuthPromise=null; // reset so fbInit re-checks after sign in
+        fbInit().then(()=>setAuthState("signed-in")).catch(()=>{});
+        setAuthState("signed-in"); // optimistic — Firebase session is now active
+      }}/>;
 
       return <MyIdCtx.Provider value={myId}>
       <div style={{minHeight:"100vh"}}>
