@@ -175,6 +175,34 @@
       });
       d.todos.forEach(t=>{ if(t.doneBy1===undefined){ const old=!!t.done; t.doneBy1=old; t.doneBy2=old; t._t1=t._t||0; t._t2=t._t||0; delete t.done; } });
       d.notes.forEach(n=>{ if(!n.comments) n.comments=[]; });
+      // Dedup languages by key (fixes double De/En caused by old merge bug)
+      if(d.languages && d.languages.length){
+        const seen={}; const merged=[];
+        d.languages.forEach(lang=>{
+          if(!seen[lang.key]){ seen[lang.key]=true; merged.push(lang); }
+          else{
+            // merge categories from duplicate into the first one
+            const first = merged.find(l=>l.key===lang.key);
+            (lang.categories||[]).forEach(cat=>{
+              const existing = first.categories.find(c=>c.key===cat.key);
+              if(existing){
+                // merge items from duplicate category, dedup by id
+                const ids = new Set((existing.items||[]).map(i=>i.id));
+                (cat.items||[]).forEach(it=>{ if(!ids.has(it.id)){ existing.items.push(it); ids.add(it.id); } });
+              }
+            });
+          }
+        });
+        d.languages = merged;
+      }
+      // Dedup subjects by key
+      if(d.subjects && d.subjects.length){
+        const seen={}; const merged=[];
+        d.subjects.forEach(s=>{
+          if(!seen[s.key]){ seen[s.key]=true; merged.push(s); }
+        });
+        d.subjects = merged;
+      }
       return d;
     }
 
